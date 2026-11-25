@@ -1,0 +1,27 @@
+# 依赖与构建产物
+node_modules/
+dist/
+target/
+*.class
+*.jar
+
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+
+# IDE / 编辑器
+.vscode/
+.trae/
+.idea/
+
+# 生成物与临时文件
+.trae-html-share-packages/
+*.log
+logs/
+.DS_Store
+Thumbs.db

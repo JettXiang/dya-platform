@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect worker retry window 18:25 / 18:30 / 18:35
+
+[Timer]
+OnCalendar=*-*-* 18:25:00
+OnCalendar=*-*-* 18:30:00
+OnCalendar=*-*-* 18:35:00
+Persistent=true
+Unit=collect-worker.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+﻿web/node_modules
+web/src
+backend/src
+worker/src
+.git
+**/*.log
+data

@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "抖音AI合集作者采集 1.4.0",
+  "version": "1.4.0",
+  "version_name": "1.4.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0GJcZzosQC6cICYuvjfmt8mnYPiAZ55AeuUxceSjPgqLbFM8w7j+wKEJCXjTLRh31u7e78WiI0UwQck0zd5hqYnlHW7hTslGg4S6OtWEIg1RQpuMfNap7PGjKGkcFTBR3uGtGA8lOHsrcr052/SHFft+8TB0PW6Skjsi4/9gXYAc5PFbq2BuKPGwrtNuxL7m6FtsxQXj+YKuiEn62oG9U6n51pLqu5hEyCDPh/65UHvK5ttTQRsZib3brEQx8LYv7S/AZ7g009wKJSZFAKY/VzqKF3s+YLvaOMYMvfU+yrEOLDdak2Iw+0KEKV/RO8s+lFfgCZdNuJ5PXhQF7IvmzwIDAQAB",
+  "description": "从抖音推荐/精选中采集「挂载合集 + 作者声明：内容由AI生成」的作者 sec_uid",
+  "permissions": ["storage", "unlimitedStorage", "tabs", "notifications", "alarms", "downloads", "activeTab"],
+  "host_permissions": [
+    "*://www.douyin.com/*",
+    "*://*.douyin.com/*",
+    "*://*.iesdouyin.com/*",
+    "http://43.165.183.142/*",
+    "http://127.0.0.1:19203/*",
+    "http://localhost:19203/*",
+    "http://10.1.2.60:19203/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "抖音AI合集作者采集",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.douyin.com/*"],
+      "js": ["content/page-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["*://*.douyin.com/*"],
+      "js": ["shared.js", "content/adapter.js", "content/parse.js", "content/content.js"],
+      "css": ["content/overlay.css"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ]
+}

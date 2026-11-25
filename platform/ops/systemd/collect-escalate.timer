@@ -1,0 +1,10 @@
+[Unit]
+Description=Collect worker escalate 18:10
+
+[Timer]
+OnCalendar=*-*-* 18:10:00
+Persistent=true
+Unit=collect-worker.service
+
+[Install]
+WantedBy=timers.target

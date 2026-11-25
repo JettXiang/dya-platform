@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: collect-worker
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:collect_platform}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&characterEncoding=utf8
+    username: ${DB_USER:collect}
+    password: ${DB_PASSWORD:collect}
+
+worker:
+  lock-file: ${WORKER_LOCK:/tmp/collect-worker.lock}
+  out-dir: ${WORKER_OUT_DIR:./data/out}
+  timeout-start-sec: ${WORKER_TIMEOUT_START_SEC:240}
+  stale-margin-sec: ${WORKER_STALE_MARGIN_SEC:60}
+  reminder-time: ${WORKER_REMINDER_TIME:18:00}
+  escalate-time: ${WORKER_ESCALATE_TIME:18:10}
+  close-time: ${WORKER_CLOSE_TIME:18:20}
+  retry-start: ${WORKER_RETRY_START:18:25}
+  retry-end: ${WORKER_RETRY_END:18:35}
+  alert-time: ${WORKER_ALERT_TIME:18:40}
+
+logging:
+  level:
+    root: INFO
+    com.collect.platform.worker: INFO

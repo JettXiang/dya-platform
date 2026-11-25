@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!-- Chrome 扩展更新清单。codebase 必须先替换成内网正式地址，未确认前不要下发。 -->
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='mgcnblpoikblnppolddcjgaocnnalcbk'>
+    <updatecheck codebase='https://replace-with-internal-host/downloads/dyaccount-1.3.8.crx' version='1.3.8'/>
+  </app>
+</gupdate>

@@ -1,0 +1,15 @@
+[Unit]
+Description=Collect platform worker decide (oneshot)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=collect
+WorkingDirectory=/opt/collect
+EnvironmentFile=/etc/collect/worker.env
+ExecStart=/usr/bin/flock -n /var/lock/collect-worker.lock /usr/bin/java -jar /opt/collect/worker.jar
+# 30s(HTTP) < 240s < 300s(retry interval); keep in sync with docs
+TimeoutStartSec=240
+Restart=no
+Nice=5

@@ -1,0 +1,85 @@
+services:
+  mysql:
+    image: mysql:8.0.40
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 设置}
+      MYSQL_DATABASE: ${DB_NAME:-collect_platform}
+      MYSQL_USER: ${DB_USER:-collect}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?请在 .env 设置}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-collect_platform}
+      DB_USER: ${DB_USER:-collect}
+      DB_PASSWORD: ${DB_PASSWORD:?请在 .env 设置}
+      JWT_SECRET: ${JWT_SECRET:?请在 .env 设置}
+      BOOTSTRAP_CODE: ${BOOTSTRAP_CODE:-}
+      BOOTSTRAP_NAME: ${BOOTSTRAP_NAME:-管理员}
+      BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:-}
+      AUDIT_FALLBACK_DIR: /data/audit-fallback
+      CDP_HOST: ${CDP_HOST:-host.docker.internal}
+      CDP_PORT: ${CDP_PORT:-9222}
+      TZ: Asia/Shanghai
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - collect-data:/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+    expose:
+      - "8080"
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/nginx/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-19203}:80"
+    depends_on:
+      - backend
+
+  # 定时判定默认走宿主机 systemd（见 ops/systemd）。
+  # 需要在容器内跑时：docker compose --profile worker run --rm worker decide
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/worker.Dockerfile
+    profiles: ["worker"]
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-collect_platform}
+      DB_USER: ${DB_USER:-collect}
+      DB_PASSWORD: ${DB_PASSWORD:?请在 .env 设置}
+      WORKER_OUT_DIR: /data/out
+      WORKER_LOCK: /data/worker.lock
+      TZ: Asia/Shanghai
+    volumes:
+      - collect-data:/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
+  collect-data:

@@ -1,0 +1,61 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: collect-backend
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:collect_platform}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&characterEncoding=utf8
+    username: ${DB_USER:collect}
+    password: ${DB_PASSWORD:collect}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      leak-detection-threshold: 60000
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+  jackson:
+    default-property-inclusion: non_null
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-me-please-change-me-please-32bytes}
+    access-hours: 168
+    refresh-days: 7
+  bootstrap:
+    code: ${BOOTSTRAP_CODE:INTERN01}
+    name: ${BOOTSTRAP_NAME:管理员}
+    password: ${BOOTSTRAP_PASSWORD:}
+  audit:
+    # G03 P1：必须落在宿主机持久卷（不要用容器临时目录）
+    fallback-dir: ${AUDIT_FALLBACK_DIR:./data/audit-fallback}
+    queue-capacity: 10000
+    drain-timeout-ms: 5000
+    replay-enabled: ${AUDIT_REPLAY_ENABLED:true}
+  cdp:
+    # 本机 Chrome 的远程调试端口（容器内经 host.docker.internal 访问 Windows 宿主）
+    host: ${CDP_HOST:host.docker.internal}
+    port: ${CDP_PORT:9222}
+  worker:
+    # 与 systemd TimeoutStartSec 对应的判定阈值
+    timeout-start-sec: 240
+    stale-margin-sec: 60

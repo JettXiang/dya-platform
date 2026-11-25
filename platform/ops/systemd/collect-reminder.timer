@@ -1,0 +1,10 @@
+[Unit]
+Description=Collect worker reminder 18:00
+
+[Timer]
+OnCalendar=*-*-* 18:00:00
+Persistent=true
+Unit=collect-worker.service
+
+[Install]
+WantedBy=timers.target

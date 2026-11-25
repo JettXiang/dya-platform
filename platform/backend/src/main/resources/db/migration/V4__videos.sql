@@ -1,0 +1,46 @@
+-- 实时采集：视频明细 + 上传批次日志
+CREATE TABLE videos (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  aweme_id VARCHAR(64) NOT NULL,
+  url VARCHAR(255) NOT NULL,
+  title VARCHAR(512) DEFAULT NULL,
+  cover_url VARCHAR(1024) DEFAULT NULL,
+  author_sec_uid VARCHAR(128) COLLATE utf8mb4_bin DEFAULT NULL,
+  author_nickname VARCHAR(128) DEFAULT NULL,
+  digg_count BIGINT NOT NULL DEFAULT 0,
+  comment_count BIGINT NOT NULL DEFAULT 0,
+  share_count BIGINT NOT NULL DEFAULT 0,
+  collect_count BIGINT NOT NULL DEFAULT 0,
+  status ENUM('pending','uploaded','failed') NOT NULL DEFAULT 'pending',
+  collected_by VARCHAR(32) DEFAULT NULL,
+  collected_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  uploaded_at DATETIME(3) DEFAULT NULL,
+  upload_note VARCHAR(500) DEFAULT NULL,
+  source_url VARCHAR(512) DEFAULT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_videos_aweme (aweme_id),
+  KEY idx_videos_collected_at (collected_at),
+  KEY idx_videos_status (status),
+  KEY idx_videos_author (author_sec_uid),
+  KEY idx_videos_collector (collected_by, collected_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE video_uploads (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  uploader_id VARCHAR(64) NOT NULL,
+  operator VARCHAR(32) DEFAULT NULL,
+  video_count INT NOT NULL DEFAULT 0,
+  sec_uid_count INT NOT NULL DEFAULT 0,
+  http_status INT DEFAULT NULL,
+  remote_count INT DEFAULT NULL,
+  inserted_count INT DEFAULT NULL,
+  duplicate_count INT DEFAULT NULL,
+  success TINYINT NOT NULL DEFAULT 0,
+  error VARCHAR(1000) DEFAULT NULL,
+  raw_response MEDIUMTEXT DEFAULT NULL,
+  started_at DATETIME(3) NOT NULL,
+  ended_at DATETIME(3) DEFAULT NULL,
+  duration_ms INT DEFAULT NULL,
+  PRIMARY KEY (id),
+  KEY idx_video_uploads_at (started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
