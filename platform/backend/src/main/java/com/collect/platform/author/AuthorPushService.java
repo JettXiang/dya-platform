@@ -1,6 +1,7 @@
-package com.collect.platform.video;
+package com.collect.platform.author;
 
 import com.collect.platform.security.UserContext;
+import com.collect.platform.video.VideoUploadService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;

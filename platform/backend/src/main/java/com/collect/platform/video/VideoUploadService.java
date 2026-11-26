@@ -176,7 +176,7 @@ public class VideoUploadService {
         return out;
     }
 
-    static byte[] multipart(String boundary, String uploaderId, Set<String> secUids) {
+    public static byte[] multipart(String boundary, String uploaderId, Set<String> secUids) {
         String text = String.join("\n", secUids);
         try {
             ByteArrayOutputStream out = new ByteArrayOutputStream(text.length() + 512);

@@ -1,4 +1,4 @@
-package com.collect.platform.video;
+package com.collect.platform.author;
 
 import com.collect.platform.audit.Audited;
 import com.collect.platform.common.Result;

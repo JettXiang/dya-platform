@@ -1,8 +1,8 @@
-package com.collect.platform.ingest;
+package com.collect.platform.extension;
 
 import com.collect.platform.audit.Audited;
 import com.collect.platform.common.Result;
-import com.collect.platform.ingest.dto.IngestDtos;
+import com.collect.platform.extension.dto.IngestDtos;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 

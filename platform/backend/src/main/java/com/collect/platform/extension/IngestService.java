@@ -1,9 +1,9 @@
-package com.collect.platform.ingest;
+package com.collect.platform.extension;
 
 import com.collect.platform.common.BadRequestException;
 import com.collect.platform.common.ConflictException;
 import com.collect.platform.common.ForbiddenException;
-import com.collect.platform.ingest.dto.IngestDtos;
+import com.collect.platform.extension.dto.IngestDtos;
 import com.collect.platform.security.UserContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.dao.DataIntegrityViolationException;

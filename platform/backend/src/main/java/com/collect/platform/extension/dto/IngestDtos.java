@@ -1,4 +1,4 @@
-package com.collect.platform.ingest.dto;
+package com.collect.platform.extension.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
