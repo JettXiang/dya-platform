@@ -6,7 +6,6 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -20,11 +19,11 @@ import java.util.List;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    private final JdbcTemplate jdbcTemplate;
+    private final TokenVersionRepository tokenVersions;
 
-    public JwtAuthFilter(JwtService jwtService, JdbcTemplate jdbcTemplate) {
+    public JwtAuthFilter(JwtService jwtService, TokenVersionRepository tokenVersions) {
         this.jwtService = jwtService;
-        this.jdbcTemplate = jdbcTemplate;
+        this.tokenVersions = tokenVersions;
     }
 
     @Override
@@ -45,9 +44,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
             long userId = Long.parseLong(claims.getSubject());
             int tokenVersion = ((Number) claims.get("tv")).intValue();
-            Integer current = jdbcTemplate.queryForObject(
-                    "SELECT token_version FROM users WHERE id = ? AND status = 1",
-                    Integer.class, userId);
+            Integer current = tokenVersions.currentVersion(userId);
             if (current == null || current != tokenVersion) {
                 writeUnauthorized(response, "登录状态已变更，请重新登录");
                 return;

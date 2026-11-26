@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -15,18 +14,18 @@ public class BootstrapRunner implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(BootstrapRunner.class);
 
-    private final JdbcTemplate jdbcTemplate;
+    private final AuthRepository repo;
     private final PasswordEncoder passwordEncoder;
     private final String code;
     private final String name;
     private final String password;
 
-    public BootstrapRunner(JdbcTemplate jdbcTemplate,
+    public BootstrapRunner(AuthRepository repo,
                            PasswordEncoder passwordEncoder,
                            @Value("${app.bootstrap.code:}") String code,
                            @Value("${app.bootstrap.name:}") String name,
                            @Value("${app.bootstrap.password:}") String password) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.repo = repo;
         this.passwordEncoder = passwordEncoder;
         this.code = code;
         this.name = name;
@@ -39,14 +38,10 @@ public class BootstrapRunner implements ApplicationRunner {
             log.warn("BOOTSTRAP_SKIPPED 未提供 BOOTSTRAP_CODE/BOOTSTRAP_PASSWORD");
             return;
         }
-        int exists = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM users WHERE code = ?", Integer.class, code);
-        if (exists > 0) {
+        if (repo.existsByCode(code)) {
             return;
         }
-        jdbcTemplate.update(
-                "INSERT INTO users (code, name, role, password_hash, token_version, status, created_at) VALUES (?,?,?,?,0,1,NOW(3))",
-                code, name, "admin", passwordEncoder.encode(password));
+        repo.insertAdmin(code, name, passwordEncoder.encode(password));
         log.info("BOOTSTRAP_USER_CREATED code={}", code);
     }
 }
