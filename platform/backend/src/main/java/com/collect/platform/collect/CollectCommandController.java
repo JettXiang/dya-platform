@@ -1,4 +1,4 @@
-package com.collect.platform.video;
+package com.collect.platform.collect;
 
 import com.collect.platform.common.Result;
 import org.springframework.beans.factory.annotation.Value;

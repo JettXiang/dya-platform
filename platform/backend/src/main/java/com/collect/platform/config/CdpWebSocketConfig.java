@@ -1,5 +1,6 @@
-package com.collect.platform.cdp;
+package com.collect.platform.config;
 
+import com.collect.platform.cdp.CdpWebSocketHandler;
 import com.collect.platform.security.JwtService;
 import io.jsonwebtoken.Claims;
 import org.springframework.context.annotation.Configuration;

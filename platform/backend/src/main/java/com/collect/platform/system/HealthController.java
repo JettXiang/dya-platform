@@ -1,5 +1,6 @@
-package com.collect.platform.common;
+package com.collect.platform.system;
 
+import com.collect.platform.common.Result;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
