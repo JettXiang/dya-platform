@@ -7,7 +7,6 @@ import com.collect.platform.security.UserContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -40,13 +39,11 @@ public class CdpController {
 
     private final CdpClient cdpClient;
     private final CdpTerminalStore terminals;
-    private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
 
-    public CdpController(CdpClient cdpClient, CdpTerminalStore terminals, JdbcTemplate jdbc, ObjectMapper mapper) {
+    public CdpController(CdpClient cdpClient, CdpTerminalStore terminals, ObjectMapper mapper) {
         this.cdpClient = cdpClient;
         this.terminals = terminals;
-        this.jdbc = jdbc;
         this.mapper = mapper;
     }
 
@@ -109,15 +106,12 @@ public class CdpController {
         }
         int port = body.get("port") == null ? 9222 : ((Number) body.get("port")).intValue();
         try {
-            jdbc.update("""
-                    INSERT INTO cdp_terminals (code, name, host, port, owner_code, douyin_account, note)
-                    VALUES (?,?,?,?,?,?,?)
-                    """, code, name, host, port, text(body.get("ownerCode")),
+            terminals.create(code, name, host, port, text(body.get("ownerCode")),
                     text(body.get("douyinAccount")), text(body.get("note")));
         } catch (DataIntegrityViolationException dup) {
             throw new ConflictException("terminal_exists", "终端编码已存在：" + code);
         }
-        Long id = jdbc.queryForObject("SELECT id FROM cdp_terminals WHERE code = ?", Long.class, code);
+        Long id = terminals.findIdByCode(code);
         return Result.ok(Map.of("id", id, "code", code));
     }
 
@@ -127,24 +121,19 @@ public class CdpController {
         if (cur == null) {
             throw new IllegalArgumentException("终端不存在");
         }
-        jdbc.update("""
-                UPDATE cdp_terminals SET name = ?, host = ?, port = ?, owner_code = ?,
-                       douyin_account = ?, note = ? WHERE id = ?
-                """,
-                pick(body.get("name"), cur.get("name")),
-                pick(body.get("host"), cur.get("host")),
+        terminals.update(id,
+                (String) pick(body.get("name"), cur.get("name")),
+                (String) pick(body.get("host"), cur.get("host")),
                 body.get("port") == null ? ((Number) cur.get("port")).intValue() : ((Number) body.get("port")).intValue(),
-                pick(body.get("ownerCode"), cur.get("owner_code")),
-                pick(body.get("douyinAccount"), cur.get("douyin_account")),
-                pick(body.get("note"), cur.get("note")),
-                id);
+                (String) pick(body.get("ownerCode"), cur.get("owner_code")),
+                (String) pick(body.get("douyinAccount"), cur.get("douyin_account")),
+                (String) pick(body.get("note"), cur.get("note")));
         return Result.ok(Map.of("id", id, "code", String.valueOf(cur.get("code"))));
     }
 
     @DeleteMapping("/terminals/{id}")
     public Result<Map<String, Object>> deleteTerminal(@PathVariable long id) {
-        int n = jdbc.update("DELETE FROM cdp_terminals WHERE id = ?", id);
-        if (n == 0) {
+        if (terminals.delete(id) == 0) {
             throw new IllegalArgumentException("终端不存在");
         }
         return Result.ok(Map.of("id", id, "deleted", true));
@@ -170,25 +159,7 @@ public class CdpController {
         if (port < 1024 || port > 65535) {
             throw new IllegalArgumentException("端口不合法：" + port);
         }
-        int n = jdbc.update("UPDATE cdp_terminals SET host = ?, port = ? WHERE code = ?", host, port, code);
-        boolean created = false;
-        if (n == 0) {
-            // 开放式安装包：谁装上来自动登记一条，归属账号留空，等管理员在「终端管理」里分配
-            String name = text(body.get("name"));
-            if (name == null) {
-                name = code;
-            }
-            try {
-                jdbc.update("""
-                        INSERT INTO cdp_terminals (code, name, host, port, owner_code, douyin_account, note)
-                        VALUES (?,?,?,?,NULL,NULL,?)
-                        """, code, name, host, port, "自动注册，待分配归属账号");
-                created = true;
-            } catch (DataIntegrityViolationException dup) {
-                // 并发上报时另一条已经建好了，退回纯更新
-                jdbc.update("UPDATE cdp_terminals SET host = ?, port = ? WHERE code = ?", host, port, code);
-            }
-        }
+        boolean created = terminals.announce(code, host, port, text(body.get("name")));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
         out.put("code", code);

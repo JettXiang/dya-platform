@@ -36,9 +36,7 @@ public class CdpSession implements AutoCloseable {
             });
 
     private final String pageWsUrl;
-    private final String collector;
     private final String terminalCode;
-    private final VideoIngestService ingest;
     private final ObjectMapper mapper;
     /** 前端出口可换绑：同一槽位的前端重连时直接挂到已有会话上，采集状态不归零。 */
     private volatile Consumer<String> sink;
@@ -46,7 +44,8 @@ public class CdpSession implements AutoCloseable {
     private final HttpClient http = HttpClient.newHttpClient();
     private final AtomicLong cmdId = new AtomicLong();
     private final Map<Long, Consumer<JsonNode>> callbacks = new ConcurrentHashMap<>();
-    private final Map<String, String> pendingResponses = new ConcurrentHashMap<>();
+    /** 入库桥接：网络响应解析、关键词归因与采集计数都收敛在这里。 */
+    private final CdpIngestBridge ingestBridge;
 
     private volatile WebSocket ws;
     private volatile boolean listening;
@@ -59,14 +58,6 @@ public class CdpSession implements AutoCloseable {
     private volatile int deviceWidth = 1280;
     private volatile int deviceHeight = 800;
     private volatile String currentUrl = "";
-    /** 当前搜索结果页对应的关键词；入库时写入 videos.search_keyword，供周分析归因 */
-    private volatile String activeKeyword;
-    private volatile int ingestedTotal;
-    /** 采集口径统计：扫到的作品数、合集命中、AI 命中、双命中入库。 */
-    private volatile int scannedTotal;
-    private volatile int mixHitTotal;
-    private volatile int aiHitTotal;
-    private volatile int droppedTotal;
     private volatile boolean shotBusy;
     private volatile boolean shotLoopOn;
     /** 通道失效回调：由槽位管理器踢掉前端连接，让浏览器重连后重建会话，避免一直「已连接但黑屏」。 */
@@ -77,10 +68,9 @@ public class CdpSession implements AutoCloseable {
     public CdpSession(String pageWsUrl, String collector, String terminalCode,
                       VideoIngestService ingest, ObjectMapper mapper, Consumer<String> sink) {
         this.pageWsUrl = pageWsUrl;
-        this.collector = collector;
         this.terminalCode = terminalCode;
-        this.ingest = ingest;
         this.mapper = mapper;
+        this.ingestBridge = new CdpIngestBridge(ingest, mapper, collector, terminalCode);
         this.sink = sink;
         this.attached = sink != null;
     }
@@ -112,18 +102,12 @@ public class CdpSession implements AutoCloseable {
     }
 
     public int getIngestedTotal() {
-        return ingestedTotal;
+        return ingestBridge.ingestedTotal();
     }
 
     /** 采集口径计数，前端重连后回填用。 */
     public Map<String, Object> stats() {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ingested", ingestedTotal);
-        out.put("scanned", scannedTotal);
-        out.put("mixHits", mixHitTotal);
-        out.put("aiHits", aiHitTotal);
-        out.put("dropped", droppedTotal);
-        return out;
+        return ingestBridge.stats();
     }
 
     public void connect() {
@@ -177,7 +161,7 @@ public class CdpSession implements AutoCloseable {
             case "key" -> dispatchKey(msg);
             case "navigate" -> {
                 String url = msg.path("url").asText("https://www.douyin.com");
-                syncSearchKeyword(url);
+                ingestBridge.syncSearchKeyword(url);
                 send("Page.navigate", Map.of("url", url));
             }
             case "reload" -> send("Page.reload", Map.of("ignoreCache", false));
@@ -272,7 +256,7 @@ public class CdpSession implements AutoCloseable {
             case "Page.frameNavigated" -> {
                 if (params.path("frame").path("parentId").isMissingNode()) {
                     currentUrl = params.path("frame").path("url").asText("");
-                    syncSearchKeyword(currentUrl);
+                    ingestBridge.syncSearchKeyword(currentUrl);
                     emitState();
                     // 页面导航后 Chrome 会停掉 screencast，必须重新开，否则画面卡在上一页
                     restartScreencast();
@@ -281,34 +265,13 @@ public class CdpSession implements AutoCloseable {
             case "Network.responseReceived" -> {
                 String type = params.path("type").asText("");
                 if ("XHR".equals(type) || "Fetch".equals(type)) {
-                    pendingResponses.put(params.path("requestId").asText(),
+                    ingestBridge.responseReceived(params.path("requestId").asText(),
                             params.path("response").path("url").asText(""));
                 }
             }
             case "Network.loadingFinished" -> onLoadingFinished(params.path("requestId").asText());
             default -> { }
         }
-    }
-
-    /** 从搜索结果页 URL 里取关键词（/search/xxx），离开搜索页则清空。 */
-    private void syncSearchKeyword(String url) {
-        if (url == null || !url.contains("/search/")) {
-            activeKeyword = null;
-            return;
-        }
-        int i = url.indexOf("/search/");
-        String rest = url.substring(i + 8);
-        int q = rest.indexOf('?');
-        if (q >= 0) {
-            rest = rest.substring(0, q);
-        }
-        try {
-            rest = java.net.URLDecoder.decode(rest, java.nio.charset.StandardCharsets.UTF_8);
-        } catch (Exception ignore) {
-            /* 保持原样 */
-        }
-        rest = rest.trim();
-        activeKeyword = rest.isEmpty() ? null : (rest.length() > 128 ? rest.substring(0, 128) : rest);
     }
 
     private void restartScreencast() {
@@ -419,119 +382,14 @@ public class CdpSession implements AutoCloseable {
     }
 
     private void onLoadingFinished(String requestId) {
-        String url = pendingResponses.remove(requestId);
-        if (url == null || !listening || closed) {
-            return;
-        }
-        if (!url.contains("/aweme/")) {
+        String url = ingestBridge.takeAwemeUrl(requestId, listening);
+        if (url == null || closed) {
             return;
         }
         long id = cmdId.incrementAndGet();
-        callbacks.put(id, resp -> {
-            JsonNode result = resp.path("result");
-            String body = result.path("body").asText("");
-            if (body.isEmpty()) {
-                return;
-            }
-            if (result.path("base64Encoded").asBoolean(false)) {
-                try {
-                    body = new String(java.util.Base64.getDecoder().decode(body),
-                            java.nio.charset.StandardCharsets.UTF_8);
-                } catch (Exception ex) {
-                    return;
-                }
-            }
-            handleJsonBody(body, url);
-        });
+        callbacks.put(id, resp -> ingestBridge.handleBody(resp, url, this::emit));
         write(Map.of("id", id, "method", "Network.getResponseBody",
                 "params", Map.of("requestId", requestId)));
-    }
-
-    private void handleJsonBody(String body, String url) {
-        if (!body.startsWith("{") && !body.startsWith("[")) {
-            return;
-        }
-        JsonNode root;
-        try {
-            root = mapper.readTree(body);
-        } catch (Exception ex) {
-            return;
-        }
-        Map<String, Map<String, Object>> found = new LinkedHashMap<>();
-        collectAwemes(root, found, 0);
-        if (found.isEmpty()) {
-            return;
-        }
-
-        // v1.4.0 口径：合集 + AI 声明双命中才入库，其余只计数用于观察采集质量
-        List<Map<String, Object>> qualified = new ArrayList<>();
-        int mixHits = 0;
-        int aiHits = 0;
-        for (Map<String, Object> item : found.values()) {
-            VideoIngestService.Judgement j = ingest.judge(item);
-            if (j.hasMix()) {
-                mixHits++;
-            }
-            if (j.hasAi()) {
-                aiHits++;
-            }
-            if (j.qualified()) {
-                qualified.add(item);
-            }
-        }
-        scannedTotal += found.size();
-        mixHitTotal += mixHits;
-        aiHitTotal += aiHits;
-        droppedTotal += found.size() - qualified.size();
-        if (qualified.isEmpty()) {
-            emit(Map.of("type", "ingested", "count", 0, "inserted", 0, "total", ingestedTotal,
-                    "scanned", found.size(), "mixHits", mixHitTotal, "aiHits", aiHitTotal,
-                    "dropped", droppedTotal, "url", url));
-            return;
-        }
-        int inserted = 0;
-        try {
-            inserted = ingest.save(qualified, collector, url, terminalCode, activeKeyword);
-        } catch (Exception ex) {
-            log.warn("视频入库失败: {}", ex.getMessage());
-            emit(Map.of("type", "error", "message", "入库失败：" + ex.getMessage()));
-            return;
-        }
-        ingestedTotal += inserted;
-        Map<String, Object> msg = new LinkedHashMap<>();
-        msg.put("type", "ingested");
-        msg.put("count", qualified.size());
-        msg.put("inserted", inserted);
-        msg.put("total", ingestedTotal);
-        msg.put("scanned", found.size());
-        msg.put("mixHits", mixHitTotal);
-        msg.put("aiHits", aiHitTotal);
-        msg.put("dropped", droppedTotal);
-        msg.put("url", url);
-        emit(msg);
-    }
-
-    @SuppressWarnings("unchecked")
-    private void collectAwemes(JsonNode node, Map<String, Map<String, Object>> out, int depth) {
-        if (depth > 8 || node == null) {
-            return;
-        }
-        if (node.isObject()) {
-            JsonNode awemeId = node.get("aweme_id");
-            JsonNode author = node.get("author");
-            if (awemeId != null && author != null && author.isObject()
-                    && author.has("sec_uid")) {
-                String id = awemeId.asText();
-                if (!id.isEmpty() && !out.containsKey(id) && out.size() < 2000) {
-                    out.put(id, mapper.convertValue(node, Map.class));
-                }
-            }
-            node.fields().forEachRemaining(e -> collectAwemes(e.getValue(), out, depth + 1));
-        } else if (node.isArray()) {
-            for (JsonNode child : node) {
-                collectAwemes(child, out, depth + 1);
-            }
-        }
     }
 
     /* ================= 基础收发 ================= */

@@ -23,6 +23,8 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -43,14 +45,11 @@ class CdpControllerTerminalTest {
     @Mock
     private CdpTerminalStore terminals;
 
-    @Mock
-    private JdbcTemplate jdbc;
-
     private CdpController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new CdpController(cdpClient, terminals, jdbc, new ObjectMapper());
+        controller = new CdpController(cdpClient, terminals, new ObjectMapper());
     }
 
     @AfterEach
@@ -120,7 +119,7 @@ class CdpControllerTerminalTest {
         assertThatThrownBy(() -> controller.createTerminal(Map.of("code", "PC-01", "name", "终端")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("主机地址必填");
-        verify(jdbc, never()).update(anyString(), any(Object[].class));
+        verify(terminals, never()).create(anyString(), anyString(), anyString(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -128,7 +127,7 @@ class CdpControllerTerminalTest {
     void createDuplicateCodeThrowsConflict() {
         Map<String, Object> body = Map.of("code", "PC-01", "name", "终端", "host", "10.0.0.1");
         doThrow(new DataIntegrityViolationException("duplicate"))
-                .when(jdbc).update(anyString(), any(Object[].class));
+                .when(terminals).create(anyString(), anyString(), anyString(), anyInt(), any(), any(), any());
 
         assertThatThrownBy(() -> controller.createTerminal(body))
                 .isInstanceOf(ConflictException.class)
@@ -142,15 +141,11 @@ class CdpControllerTerminalTest {
         body.put("code", "  PC-01  ");
         body.put("name", "终端");
         body.put("host", "10.0.0.1");
-        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
-        when(jdbc.queryForObject(anyString(), eq(Long.class), any(Object[].class))).thenReturn(7L);
+        when(terminals.findIdByCode("PC-01")).thenReturn(7L);
 
         Result<Map<String, Object>> res = controller.createTerminal(body);
 
-        ArgumentCaptor<Object[]> args = ArgumentCaptor.forClass(Object[].class);
-        verify(jdbc).update(anyString(), args.capture());
-        assertThat(args.getValue()[0]).isEqualTo("PC-01");
-        assertThat(args.getValue()[3]).isEqualTo(9222);
+        verify(terminals).create("PC-01", "终端", "10.0.0.1", 9222, null, null, null);
         assertThat(res.getData()).containsEntry("id", 7L).containsEntry("code", "PC-01");
     }
 
@@ -164,7 +159,7 @@ class CdpControllerTerminalTest {
         assertThatThrownBy(() -> controller.updateTerminal(9L, Map.of("name", "新名")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("终端不存在");
-        verify(jdbc, never()).update(anyString(), any(Object[].class));
+        verify(terminals, never()).update(anyLong(), any(), any(), anyInt(), any(), any(), any());
     }
 
     @Test
@@ -175,16 +170,7 @@ class CdpControllerTerminalTest {
 
         Result<Map<String, Object>> res = controller.updateTerminal(3L, Map.of("name", "新名"));
 
-        ArgumentCaptor<Object[]> args = ArgumentCaptor.forClass(Object[].class);
-        verify(jdbc).update(anyString(), args.capture());
-        Object[] v = args.getValue();
-        assertThat(v[0]).isEqualTo("新名");
-        assertThat(v[1]).isEqualTo("10.0.0.1");
-        assertThat(v[2]).isEqualTo(9222);
-        assertThat(v[3]).isEqualTo("INTERN01");
-        assertThat(v[4]).isEqualTo("douyin-01");
-        assertThat(v[5]).isEqualTo("备注");
-        assertThat(v[6]).isEqualTo(3L);
+        verify(terminals).update(3L, "新名", "10.0.0.1", 9222, "INTERN01", "douyin-01", "备注");
         assertThat(res.getData()).containsEntry("code", "PC-01");
     }
 
@@ -193,7 +179,7 @@ class CdpControllerTerminalTest {
     @Test
     @DisplayName("删除不存在的终端报错，不返回成功")
     void deleteUnknownTerminalThrows() {
-        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(0);
+        when(terminals.delete(99L)).thenReturn(0);
 
         assertThatThrownBy(() -> controller.deleteTerminal(99L))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -203,7 +189,7 @@ class CdpControllerTerminalTest {
     @Test
     @DisplayName("删除成功返回 deleted=true")
     void deleteTerminalOk() {
-        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+        when(terminals.delete(5L)).thenReturn(1);
 
         Result<Map<String, Object>> res = controller.deleteTerminal(5L);
 
