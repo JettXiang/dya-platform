@@ -27,6 +27,8 @@ public class CdpWebSocketHandler extends TextWebSocketHandler {
 
     /** 槽位被另一个窗口接管时使用的关闭码，前端据此停止自动重连。 */
     private static final CloseStatus REPLACED = new CloseStatus(4001, "replaced by another window");
+    /** Chrome 侧通道已断，用这个码踢掉前端，前端按普通断线自动重连并重建会话。 */
+    private static final CloseStatus CHANNEL_LOST = new CloseStatus(4002, "cdp channel lost");
 
     private final CdpClient cdpClient;
     private final CdpTerminalStore terminals;
@@ -103,6 +105,24 @@ public class CdpWebSocketHandler extends TextWebSocketHandler {
                 previous = rt.owner;
                 rt.owner = session;
                 rt.idleSince = 0;
+                // Chrome 侧通道断了不会自动恢复：踢掉前端连接，让它重连时重建会话，
+                // 否则界面一直显示「已连接」但没有任何画面。
+                final CdpSession bound = cdp;
+                cdp.setOnDead(() -> {
+                    synchronized (rt) {
+                        if (rt.cdp != bound) {
+                            return;
+                        }
+                        WebSocketSession owner = rt.owner;
+                        if (owner != null && owner.isOpen()) {
+                            try {
+                                owner.close(CHANNEL_LOST);
+                            } catch (Exception ignore) {
+                                // ignore
+                            }
+                        }
+                    }
+                });
             }
             sessions.put(session.getId(), cdp);
             if (previous != null && !previous.getId().equals(session.getId())) {

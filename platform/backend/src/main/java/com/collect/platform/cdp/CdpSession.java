@@ -69,6 +69,10 @@ public class CdpSession implements AutoCloseable {
     private volatile int droppedTotal;
     private volatile boolean shotBusy;
     private volatile boolean shotLoopOn;
+    /** 通道失效回调：由槽位管理器踢掉前端连接，让浏览器重连后重建会话，避免一直「已连接但黑屏」。 */
+    private volatile Runnable onDead;
+    private int sendFailures;
+    private int shotTimeouts;
 
     public CdpSession(String pageWsUrl, String collector, String terminalCode,
                       VideoIngestService ingest, ObjectMapper mapper, Consumer<String> sink) {
@@ -79,6 +83,10 @@ public class CdpSession implements AutoCloseable {
         this.mapper = mapper;
         this.sink = sink;
         this.attached = sink != null;
+    }
+
+    public void setOnDead(Runnable callback) {
+        this.onDead = callback;
     }
 
     /** 前端重连时把画面出口换到新连接，采集会话本身继续跑。 */
@@ -364,6 +372,10 @@ public class CdpSession implements AutoCloseable {
         // 上一次截图请求丢了响应时把 busy 解开，否则兜底永远不再发新图
         if (shotBusy && now0 - shotAt > 5000) {
             shotBusy = false;
+            if (++shotTimeouts >= 3) {
+                markDead("兜底截图连续超时");
+                return;
+            }
         }
         if (shotBusy || now0 - lastFrameAt < 1500) {
             return;
@@ -377,6 +389,7 @@ public class CdpSession implements AutoCloseable {
             if (data.isEmpty() || closed) {
                 return;
             }
+            shotTimeouts = 0;
             long now = System.currentTimeMillis();
             if (now - lastFrameAt < FRAME_INTERVAL_MS) {
                 return;
@@ -541,7 +554,11 @@ public class CdpSession implements AutoCloseable {
         }
         try {
             socket.sendText(mapper.writeValueAsString(msg), true).join();
+            sendFailures = 0;
         } catch (Exception ex) {
+            if (++sendFailures >= 3) {
+                markDead("连续发送失败：" + ex.getMessage());
+            }
             log.debug("CDP 发送失败 {}: {}", msg.get("method"), ex.getMessage());
         }
     }
@@ -581,6 +598,23 @@ public class CdpSession implements AutoCloseable {
         }
     }
 
+    /** 通道已死：标记关闭并通知槽位管理器重建，否则前端会一直显示「已连接」却收不到任何画面。 */
+    private void markDead(String reason) {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        log.warn("{} 采集通道失效：{}", terminalCode, reason);
+        Runnable callback = onDead;
+        if (callback != null) {
+            try {
+                callback.run();
+            } catch (Exception ignore) {
+                // 回调失败不影响后续重建
+            }
+        }
+    }
+
     private class ChromeListener implements WebSocket.Listener {
         private final StringBuilder buffer = new StringBuilder();
 
@@ -607,15 +641,13 @@ public class CdpSession implements AutoCloseable {
 
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-            if (!closed) {
-                emit(Map.of("type", "error", "message", "页面调试通道已断开：" + reason));
-            }
+            markDead("页面调试通道已断开：" + reason);
             return null;
         }
 
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
-            log.warn("CDP 通道异常: {}", error.getMessage());
+            markDead("CDP 通道异常：" + error.getMessage());
         }
     }
 }

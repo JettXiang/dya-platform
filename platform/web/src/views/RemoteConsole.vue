@@ -35,6 +35,8 @@ let ws = null
 let loopTimer = null
 const loopRunning = ref(false)
 const frame = ref('')
+/* 最近一次收到画面的时间：后端通道静默失效时用它触发前端重连 */
+let lastFrameAt = 0
 const pageUrl = ref('')
 const ingested = ref(0)
 /* 采集口径计数：扫到多少、合集命中、AI 命中、被丢弃 */
@@ -363,6 +365,7 @@ function connect() {
     }
     if (m.type === 'ready') {
       wsState.value = 'ready'
+      lastFrameAt = Date.now()
       pageUrl.value = m.url || ''
       // 后端常驻会话会把采集状态带回来，切页/重连后不会显示「未开始 / 0」
       listening.value = !!m.listening
@@ -377,6 +380,7 @@ function connect() {
       // 这里把下滑循环接上，否则界面显示「采集进行中」但页面其实不动。
       if (m.listening && !loopTimer) scrollLoop()
     } else if (m.type === 'frame') {
+      lastFrameAt = Date.now()
       frame.value = 'data:image/jpeg;base64,' + (m.data || '')
     } else if (m.type === 'state') {
       pageUrl.value = m.url || pageUrl.value
@@ -789,6 +793,18 @@ function tickUptime() {
   uptime.value = `${h}:${m}:${ss}`
 }
 
+/* 画面看门狗：后端通道静默断掉时界面会一直显示「已连接」，
+ * 超过 15 秒没收到任何帧就主动重连，重连后后端会重建会话。 */
+function tickFrameWatch() {
+  if (wsState.value !== 'ready' || !lastFrameAt) return
+  if (Date.now() - lastFrameAt <= 15000) return
+  lastFrameAt = 0
+  retryAllowed = true
+  retryDelay = 3000
+  pushEvent('15 秒没有收到画面，自动重连采集通道', 'bad')
+  connect()
+}
+
 onMounted(async () => {
   await loadTerminals()
   loadLauncher()
@@ -803,6 +819,7 @@ onMounted(async () => {
   kwTimer = setInterval(() => {
     tickKeywords()
     tickLoopRemain()
+    tickFrameWatch()
   }, 1000)
   douyinTimer = setInterval(loadDouyinStatus, 60000)
   autoSearchTimer = setInterval(tickAutoSearch, 5000)
