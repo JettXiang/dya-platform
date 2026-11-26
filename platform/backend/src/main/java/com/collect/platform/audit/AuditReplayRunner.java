@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -33,23 +32,16 @@ public class AuditReplayRunner {
 
     private static final Logger log = LoggerFactory.getLogger(AuditReplayRunner.class);
 
-    private static final String INSERT_SQL = """
-            INSERT IGNORE INTO audit_logs
-            (event_id, actor_id, operator, operator_type, triggered_by, action, method, uri, params,
-             object_type, object_id, detail_json, ip, success, error_message, duration_ms, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """;
-
-    private final JdbcTemplate jdbcTemplate;
+    private final AuditRepository repo;
     private final ObjectMapper objectMapper;
     private final Path dir;
     private final boolean enabled;
 
-    public AuditReplayRunner(JdbcTemplate jdbcTemplate,
+    public AuditReplayRunner(AuditRepository repo,
                              ObjectMapper objectMapper,
                              @Value("${app.audit.fallback-dir}") String dir,
                              @Value("${app.audit.replay-enabled:true}") boolean enabled) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.repo = repo;
         this.objectMapper = objectMapper;
         this.dir = Path.of(dir);
         this.enabled = enabled;
@@ -122,13 +114,7 @@ public class AuditReplayRunner {
     }
 
     private void insert(AuditEvent e) {
-        jdbcTemplate.update(INSERT_SQL,
-                e.getEventId(), e.getActorId(), e.getOperator(), e.getOperatorType(), e.getTriggeredBy(),
-                e.getAction(), e.getMethod(), e.getUri(), e.getParams(),
-                e.getObjectType(), e.getObjectId(), e.getDetailJson(), e.getIp(),
-                e.isSuccess(), e.getErrorMessage(), e.getDurationMs(),
-                java.sql.Timestamp.valueOf(e.getCreatedAt() == null
-                        ? java.time.LocalDateTime.now() : e.getCreatedAt()));
+        repo.insert(e);
     }
 
     private void cleanupDone() {

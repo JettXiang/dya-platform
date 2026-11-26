@@ -6,7 +6,6 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -37,14 +36,7 @@ public class AuditRecorder {
 
     private static final Logger log = LoggerFactory.getLogger(AuditRecorder.class);
 
-    private static final String INSERT_SQL = """
-            INSERT IGNORE INTO audit_logs
-            (event_id, actor_id, operator, operator_type, triggered_by, action, method, uri, params,
-             object_type, object_id, detail_json, ip, success, error_message, duration_ms, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """;
-
-    private final JdbcTemplate jdbcTemplate;
+    private final AuditRepository repo;
     private final ObjectMapper objectMapper;
     private final Path fallbackDir;
     private final int drainTimeoutMs;
@@ -53,12 +45,12 @@ public class AuditRecorder {
     private final AtomicBoolean accepting = new AtomicBoolean(true);
     private final ExecutorService consumer;
 
-    public AuditRecorder(JdbcTemplate jdbcTemplate,
+    public AuditRecorder(AuditRepository repo,
                          ObjectMapper objectMapper,
                          @Value("${app.audit.fallback-dir}") String fallbackDir,
                          @Value("${app.audit.queue-capacity:10000}") int capacity,
                          @Value("${app.audit.drain-timeout-ms:5000}") int drainTimeoutMs) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.repo = repo;
         this.objectMapper = objectMapper;
         this.fallbackDir = Path.of(fallbackDir);
         this.drainTimeoutMs = drainTimeoutMs;
@@ -111,27 +103,7 @@ public class AuditRecorder {
 
     private void writeWithFallback(List<AuditEvent> events) {
         try {
-            jdbcTemplate.batchUpdate(INSERT_SQL, events, events.size(), (ps, e) -> {
-                ps.setString(1, e.getEventId());
-                if (e.getActorId() == null) ps.setNull(2, java.sql.Types.BIGINT); else ps.setLong(2, e.getActorId());
-                ps.setString(3, e.getOperator());
-                ps.setString(4, e.getOperatorType());
-                if (e.getTriggeredBy() == null) ps.setNull(5, java.sql.Types.BIGINT); else ps.setLong(5, e.getTriggeredBy());
-                ps.setString(6, e.getAction());
-                ps.setString(7, e.getMethod());
-                ps.setString(8, e.getUri());
-                ps.setString(9, e.getParams());
-                ps.setString(10, e.getObjectType());
-                ps.setString(11, e.getObjectId());
-                ps.setString(12, e.getDetailJson());
-                ps.setString(13, e.getIp());
-                ps.setBoolean(14, e.isSuccess());
-                ps.setString(15, e.getErrorMessage());
-                if (e.getDurationMs() == null) ps.setNull(16, java.sql.Types.INTEGER);
-                else ps.setInt(16, e.getDurationMs());
-                ps.setTimestamp(17, java.sql.Timestamp.valueOf(
-                        e.getCreatedAt() == null ? java.time.LocalDateTime.now() : e.getCreatedAt()));
-            });
+            repo.batchInsert(events);
         } catch (Exception ex) {
             log.warn("审计入库失败，转 fallback：{}", ex.getMessage());
             events.forEach(this::appendFallback);
