@@ -21,6 +21,7 @@ target/
 
 # 生成物与临时文件
 .trae-html-share-packages/
+data/
 *.log
 logs/
 .DS_Store
