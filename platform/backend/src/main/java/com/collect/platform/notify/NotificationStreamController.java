@@ -2,7 +2,6 @@ package com.collect.platform.notify;
 
 import com.collect.platform.security.UserContext;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -21,15 +20,15 @@ public class NotificationStreamController {
 
     private static final long TIMEOUT_MS = 30 * 60 * 1000L;
 
-    private final JdbcTemplate jdbc;
+    private final NotificationRepository repo;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4, r -> {
         Thread t = new Thread(r, "notification-sse");
         t.setDaemon(true);
         return t;
     });
 
-    public NotificationStreamController(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public NotificationStreamController(NotificationRepository repo) {
+        this.repo = repo;
     }
 
     /**
@@ -39,10 +38,9 @@ public class NotificationStreamController {
     @GetMapping(value = {"/api/v1/notifications/stream", "/api/v1/events"},
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream() {
-        var ctx = UserContext.get();
-        long uid = ctx.getUserId();
+        long uid = UserContext.get().getUserId();
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
-        AtomicLong lastId = new AtomicLong(maxId(uid));
+        AtomicLong lastId = new AtomicLong(repo.maxId(uid));
         AtomicBoolean closed = new AtomicBoolean(false);
 
         ScheduledFuture<?> task = scheduler.scheduleAtFixedRate(() -> {
@@ -50,15 +48,7 @@ public class NotificationStreamController {
                 return;
             }
             try {
-                List<Map<String, Object>> rows = jdbc.queryForList("""
-                        SELECT n.id, n.kind, n.title, n.body, n.created_at
-                        FROM notifications n
-                        WHERE (n.scope = 'all' OR n.target_user_id = ?)
-                          AND n.id > ?
-                          AND NOT EXISTS (SELECT 1 FROM notification_reads r
-                                          WHERE r.notification_id = n.id AND r.user_id = ?)
-                        ORDER BY n.id LIMIT 20
-                        """, uid, lastId.get(), uid);
+                List<Map<String, Object>> rows = repo.streamRows(uid, lastId.get());
                 for (Map<String, Object> row : rows) {
                     long id = ((Number) row.get("id")).longValue();
                     emitter.send(SseEmitter.event().id(String.valueOf(id))
@@ -77,14 +67,6 @@ public class NotificationStreamController {
         emitter.onTimeout(() -> stop(closed, task));
         emitter.onError(ex -> stop(closed, task));
         return emitter;
-    }
-
-    private long maxId(long uid) {
-        Long v = jdbc.queryForObject("""
-                SELECT COALESCE(MAX(n.id), 0) FROM notifications n
-                WHERE n.scope = 'all' OR n.target_user_id = ?
-                """, Long.class, uid);
-        return v == null ? 0 : v;
     }
 
     private void stop(AtomicBoolean closed, ScheduledFuture<?> task) {
