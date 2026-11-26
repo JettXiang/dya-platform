@@ -267,9 +267,6 @@ export const api = {
   saveSchedule(body) {
     return request('/api/v1/schedules', { method: 'PUT', body: JSON.stringify(body) })
   },
-  extensionConfig() {
-    return request('/api/v1/config/extension')
-  },
   videos(params) {
     return request('/api/v1/videos?' + qs(params))
   },
@@ -290,9 +287,6 @@ export const api = {
   },
   exportAiDramaAuthors(params) {
     return downloadFile('/api/v1/authors/ai-drama/export?' + qs(params), 'AI短剧达人.csv')
-  },
-  collectorStatus() {
-    return request('/api/v1/collect/status')
   },
   cdpTerminals() {
     return request('/api/v1/cdp/terminals')

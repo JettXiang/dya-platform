@@ -7,9 +7,8 @@ const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Sha
 const date = ref(today())
 const data = ref({})
 const loading = ref(false)
-const ext = ref({ online: false, ageSec: 0, scanned: 0 })
 
-/* 扩展直传口径：数据直接来自 videos 表，和排班/批次无关 */
+/* 实时采集口径：数据直接来自 videos 表，和排班/批次无关 */
 const directVideos = computed(() => Number(data.value.direct_videos || 0))
 const directAuthors = computed(() => Number(data.value.direct_authors || 0))
 const lastAtText = computed(() => {
@@ -17,20 +16,6 @@ const lastAtText = computed(() => {
   if (!ms) return '—'
   return new Date(ms).toLocaleTimeString('zh-CN', { hour12: false })
 })
-
-async function loadExt() {
-  try {
-    const r = await api.collectorStatus()
-    const item = ((r && r.data) || [])[0] || null
-    ext.value = {
-      online: !!(item && item.online),
-      ageSec: item ? Math.max(0, Math.round(Number(item.ageMs || 0) / 1000)) : 0,
-      scanned: item ? Number(item.scanned || 0) : 0
-    }
-  } catch (e) {
-    /* 心跳接口不可用时不影响总览其他数据 */
-  }
-}
 
 const scheduled = computed(() => Number(data.value.scheduled_work || 0))
 const reported = computed(() => Number(data.value.reported_accounts || 0))
@@ -68,7 +53,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-  loadExt()
 }
 
 function stateType(s) {
@@ -117,12 +101,9 @@ onMounted(load)
     <div class="direct-strip dya-card">
       <div class="direct-head">
         <div>
-          <div class="card-eyebrow">LIVE INGEST · 扩展直传</div>
+          <div class="card-eyebrow">LIVE INGEST · 实时采集</div>
           <div class="card-title">当日实时采集</div>
         </div>
-        <span class="ext-chip" :class="ext.online ? 'on' : 'off'">
-          {{ ext.online ? '扩展在线' : '扩展离线' }}
-        </span>
       </div>
       <div class="direct-grid">
         <div class="minor">
@@ -137,13 +118,9 @@ onMounted(load)
           <div class="minor-value sm">{{ lastAtText }}</div>
           <div class="minor-label">最近入库时间</div>
         </div>
-        <div class="minor">
-          <div class="minor-value sm">{{ ext.online ? ext.ageSec + ' 秒前' : '—' }}</div>
-          <div class="minor-label">扩展最近心跳</div>
-        </div>
       </div>
       <p class="direct-hint">
-        这排数字只统计 videos 表，和排班/批次无关；下方「在岗账号 / 当日批次」属于批次流程，扩展直传不产生这些记录，显示 0 是正常的。
+        这排数字只统计 videos 表，和排班/批次无关；下方「在岗账号 / 当日批次」属于批次流程，未走批次时显示 0 是正常的。
       </p>
     </div>
 
@@ -165,7 +142,7 @@ onMounted(load)
           <el-button @click="load">刷新</el-button>
         </div>
       </div>
-      <el-table :data="data.accounts || []" size="small" class="dya-table" empty-text="暂无批次：扩展直传不产生排班记录">
+      <el-table :data="data.accounts || []" size="small" class="dya-table" empty-text="暂无排班数据">
         <el-table-column prop="account_code" label="账号" width="150" />
         <el-table-column prop="name" label="姓名" width="120" />
         <el-table-column label="日终" width="100">
@@ -192,7 +169,7 @@ onMounted(load)
         </div>
         <span class="count-chip">{{ batchCount }} 个批次</span>
       </div>
-      <el-table :data="data.batches || []" size="small" class="dya-table" empty-text="暂无批次：扩展直传不产生批次记录">
+      <el-table :data="data.batches || []" size="small" class="dya-table" empty-text="暂无批次数据">
         <el-table-column prop="batch_no" label="批次号" width="200" />
         <el-table-column prop="type" label="类型" width="110" />
         <el-table-column label="状态" width="120">
@@ -236,11 +213,8 @@ onMounted(load)
 .minor-strip { margin-top: 14px; display: grid; grid-template-columns: repeat(4, 1fr); padding: 12px 8px; }
 .direct-strip { margin-top: 14px; padding: 16px 18px; }
 .direct-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.direct-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
+.direct-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
 .direct-hint { margin: 10px 0 0; font-size: 11px; line-height: 1.6; color: var(--dya-muted); }
-.ext-chip { font-size: 11px; padding: 3px 10px; border-radius: 999px; font-weight: 600; }
-.ext-chip.on { color: #0f766e; background: rgba(16, 185, 129, .12); }
-.ext-chip.off { color: #9a3412; background: rgba(249, 115, 22, .12); }
 .minor-value.sm { font-size: 15px; }
 .minor { text-align: center; border-right: 1px solid var(--dya-line); }
 .minor:last-child { border-right: 0; }
